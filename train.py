@@ -128,7 +128,7 @@ def main(args):
             optimizer.step()
 
             if i % args.log_interval == 0:
-                msg = f"Epoch [{epoch+1}/{args.num_epochs}], Step [{i+1}/{len(dataset)}], Loss: {losses.item():.4f}"
+                msg = f"Epoch [{epoch+1}/{args.num_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {losses.item():.4f}"
                 print(msg)
                 logging.info(msg)
 
