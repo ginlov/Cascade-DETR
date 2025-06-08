@@ -1,54 +1,61 @@
 from torch import nn
-from transformer import TransformerEncoder, TransformerDecoder, Attention
+from .transformer import Transformer, TransformerEncoder, TransformerDecoder
+from .positional_encoder import PositionEmbeddingSine, PositionEmbeddingLearned
+from .backbone import FrozenBatchNorm2d
+from util.misc import NestedTensor, nested_tensor_from_tensor_list
+from torch.nn import functional as F
 
 import torch
 
-def make_backbone(backbone_name, pretrained=True, batch_norm_freeze=True, resolution_increase=False):
-    if backbone_name == 'resnet50':
-        from torchvision.models import resnet50
-        backbone = resnet50(pretrained=pretrained)
-        if batch_norm_freeze:
-            for param in backbone.parameters():
-                if isinstance(param, nn.BatchNorm2d):
-                    param.requires_grad = False
-        if resolution_increase:
-            # Modify the last layer to increase resolution
-            backbone.fc = nn.Conv2d(backbone.fc.in_features, 256, kernel_size=1)
-    elif backbone_name == 'resnet101':
-        from torchvision.models import resnet101
-        backbone = resnet101(pretrained=pretrained)
-        if batch_norm_freeze:
-            for param in backbone.parameters():
-                if isinstance(param, nn.BatchNorm2d):
-                    param.requires_grad = False
-        if resolution_increase:
-            # Modify the last layer to increase resolution
-            backbone.fc = nn.Conv2d(backbone.fc.in_features, 256, kernel_size=1)
+def build_position_encoding(args):
+    """
+    The idea is borrowed from the facebookresearch/DETR repository.
+    """
+    N_steps = args.hidden_dim // 2
+    if args.position_embedding in ('sine'):
+        position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
+    elif args.position_embedding in ('learned'):
+        position_embedding = PositionEmbeddingLearned(N_steps)
     else:
-        raise ValueError(f"Unsupported backbone: {backbone_name}")
-    return backbone
+        raise ValueError(f"not supported {args.position_embedding}")
 
+    return position_embedding
 
 class DETR(nn.Module):
     def __init__(
             self, 
-            backbone_name='resnet50', 
-            pretrained=True, 
-            batch_norm_freeze=True, 
-            resolution_increase=False,
-            N=6,
-            train_positional_encoding=True,):
+            backbone: nn.Module,
+            pos_encoder: nn.Module,
+            transformer: Transformer,
+            num_queries: int = 100,
+            num_classes: int = 91
+        ):
         super(DETR, self).__init__()
-        self.backbone = make_backbone(backbone_name, pretrained, batch_norm_freeze, resolution_increase)
-        self.q_positional_encoding = nn.Parameter(torch.randn(1, 256, 50, 50)) if train_positional_encoding else nn.Parameter(torch.zeros(1, 256, 50, 50), requires_grad=False)
-        self.kv_positional_encoding = nn.Parameter(torch.randn(1, 256, 50, 50)) if train_positional_encoding else nn.Parameter(torch.zeros(1, 256, 50, 50), requires_grad=False)
-        self.encoder = TransformerEncoder(d_model=256, nhead=8, num_layers=N)
-        self.decoder = TransformerDecoder(d_model=256, nhead=8, num_layers=N)
-        self.ffn = nn.Linear(256, 256)
+        self.hdim = transformer.d_model
+        self.backbone = backbone
+        self.pos_encoder = pos_encoder
+        self.transformer = transformer
+        self.num_classes = num_classes
 
-    def forward(self, src, tgt):
-        pass
-        return None
+        self.input_proj = nn.Conv2d(backbone.num_channels, self.hdim, kernel_size=1)
+        self.query_embed = nn.Embedding(num_queries, self.hdim) # Learnable query positional encoding
+
+        self.class_embed = nn.Linear(self.hdim, num_classes + 1)  # +1 for the no-object class   
+        # self.bbox_embed = nn.Linear(self.hdim, 4)     ## TODO Change this to MLP
+        self.bbox_embed = MLP(self.hdim, self.hdim, 4, 3)
+
+    def forward(self, img: NestedTensor):
+        if isinstance(img, (list, torch.Tensor)):
+            img = nested_tensor_from_tensor_list(img)
+        img, mask = img.decompose() # TODO make backbone accept NestedTensor and compute mask inside backbone
+        src = self.backbone(img)
+        mask = F.interpolate(mask[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
+        pos_embed = self.pos_encoder(NestedTensor(src, mask))
+
+        hs = self.transformer(self.input_proj(src), mask=mask, query_embed=self.query_embed.weight, pos_embed=pos_embed)[0]
+        class_logits = self.class_embed(hs)[-1] # Match decoder output since it may return imediate outputs
+        bbox_preds = self.bbox_embed(hs).sigmoid()[-1] # Match decoder output since it may return imediate outputs
+        return {'pred_logits': class_logits, 'pred_boxes': bbox_preds}
     
 class CascadeDETR(nn.Module):
     def __init__(self, d_model, nhead, num_encoder_layers, num_decoder_layers, num_classes):
@@ -57,4 +64,19 @@ class CascadeDETR(nn.Module):
     def forward(self, src, tgt):
         pass
         return None
+    
+
+class MLP(nn.Module):
+    """ Very simple multi-layer perceptron (also called FFN)"""
+
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+        super().__init__()
+        self.num_layers = num_layers
+        h = [hidden_dim] * (num_layers - 1)
+        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
+
+    def forward(self, x):
+        for i, layer in enumerate(self.layers):
+            x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+        return x
     
