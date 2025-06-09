@@ -6,7 +6,7 @@ import os
 import torch
 
 def SFCHD_transforms(image, target):
-    output_size=(1280, 704)
+    output_size = (1280, 704)
     # Define any target transformations here
     class_ids = []
     bboxes = []
@@ -23,12 +23,7 @@ def SFCHD_transforms(image, target):
         w *= orig_w
         h *= orig_h
 
-        # Convert to [x_min, y_min, x_max, y_max] in pixel coordinates
-        x_min = x_c - w / 2
-        y_min = y_c - h / 2
-        x_max = x_c + w / 2
-        y_max = y_c + h / 2
-        bboxes.append([x_min, y_min, x_max, y_max])
+        bboxes.append([x_c, y_c, w, h])
         class_ids.append(class_id)
 
     # Resize image
@@ -36,20 +31,20 @@ def SFCHD_transforms(image, target):
     scale_x = output_size[0] / orig_w
     scale_y = output_size[1] / orig_h
 
-    # Resize bboxes and normalize to [0, 1]
+    # Resize bboxes and normalize to [0, 1] in cxcywh format
     bboxes_resized = []
     for box in bboxes:
-        x_min, y_min, x_max, y_max = box
-        x_min = x_min * scale_x
-        x_max = x_max * scale_x
-        y_min = y_min * scale_y
-        y_max = y_max * scale_y
+        x_c, y_c, w, h = box
+        x_c = x_c * scale_x
+        w = w * scale_x
+        y_c = y_c * scale_y
+        h = h * scale_y
         # Normalize
-        x_min /= output_size[0]
-        x_max /= output_size[0]
-        y_min /= output_size[1]
-        y_max /= output_size[1]
-        bboxes_resized.append([x_min, y_min, x_max, y_max])
+        x_c /= output_size[0]
+        w /= output_size[0]
+        y_c /= output_size[1]
+        h /= output_size[1]
+        bboxes_resized.append([x_c, y_c, w, h])
 
     target = {
         'labels': torch.tensor(class_ids, dtype=torch.int64),
