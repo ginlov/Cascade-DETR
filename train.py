@@ -108,7 +108,7 @@ def main(args):
         {"params": [p for n, p in detr_model.named_parameters() if "backbone" not in n and p.requires_grad]},
         {
             "params": [p for n, p in detr_model.named_parameters() if "backbone" in n and p.requires_grad],
-            "lr": args.lr_backbone,
+            "lr": args.lr * 0.1,
         },
     ]
     optimizer = torch.optim.AdamW(
