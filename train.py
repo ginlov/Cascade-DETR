@@ -104,13 +104,15 @@ def main(args):
     print(f"Using device: {device}")
     # Define the optimizer
     # Set different learning rates for backbone and the rest
-    backbone_params = list(detr_model.backbone.parameters())
-    other_params = [p for n, p in detr_model.named_parameters() if not n.startswith('backbone.') and p.requires_grad]
+    param_dicts = [
+        {"params": [p for n, p in detr_model.named_parameters() if "backbone" not in n and p.requires_grad]},
+        {
+            "params": [p for n, p in detr_model.named_parameters() if "backbone" in n and p.requires_grad],
+            "lr": args.lr_backbone,
+        },
+    ]
     optimizer = torch.optim.AdamW(
-        [
-            {'params': backbone_params, 'lr': args.lr * 0.1},
-            {'params': other_params, 'lr': args.lr}
-        ],
+        param_dicts,
         lr=args.lr,
         weight_decay=args.weight_decay
     )
@@ -138,6 +140,9 @@ def main(args):
             losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
             losses.backward()
             optimizer.step()
+            print(detr_model.query_embed.weight[0])
+            print(detr_model.query_embed.weight[1])
+            print(detr_model.query_embed.weight.mean(dim=0))
 
             if i % args.log_interval == 0:
                 msg = f"Epoch [{epoch+1}/{args.num_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {losses.item():.4f}"
