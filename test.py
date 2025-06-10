@@ -43,29 +43,37 @@ def plot_results(pil_img, boxes, labels, scores, class_names=None, score_thresh=
     draw = ImageDraw.Draw(pil_img)
     w, h = pil_img.size
 
-    # Draw predicted boxes
+    # Draw predicted boxes (cx, cy, w, h format)
     for box, label, score in zip(boxes, labels, scores):
         if score < score_thresh:
             continue
-        xmin, ymin, xmax, ymax = box
-        x0 = xmin * w
-        y0 = ymin * h
-        x1 = xmax * w
-        y1 = ymax * h
+        x_c, y_c, bw, bh = box
+        x_c *= w
+        y_c *= h
+        bw *= w
+        bh *= h
+        x0 = x_c - bw / 2
+        y0 = y_c - bh / 2
+        x1 = x_c + bw / 2
+        y1 = y_c + bh / 2
         draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
         label_text = str(label)
         if class_names and label < len(class_names):
             label_text = class_names[label]
         draw.text((x0, y0), f"{label_text}:{score:.2f}", fill="red")
 
-    # Draw ground truth boxes (in green)
+    # Draw ground truth boxes (in green, cx, cy, w, h format)
     if gt_boxes is not None:
         for gt_box in gt_boxes:
-            xmin, ymin, xmax, ymax = gt_box
-            x0 = xmin * w
-            y0 = ymin * h
-            x1 = xmax * w
-            y1 = ymax * h
+            x_c, y_c, bw, bh = gt_box
+            x_c *= w
+            y_c *= h
+            bw *= w
+            bh *= h
+            x0 = x_c - bw / 2
+            y0 = y_c - bh / 2
+            x1 = x_c + bw / 2
+            y1 = y_c + bh / 2
             draw.rectangle([x0, y0, x1, y1], outline="green", width=2)
 
     return pil_img
