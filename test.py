@@ -42,7 +42,7 @@ def argument_parser():
 def plot_results(pil_img, boxes, labels, scores, class_names=None, score_thresh=0.1, gt_boxes=None):
     draw = ImageDraw.Draw(pil_img)
     w, h = pil_img.size
-
+    print(scores)
     # Draw predicted boxes (cx, cy, w, h format)
     for box, label, score in zip(boxes, labels, scores):
         if score < score_thresh:

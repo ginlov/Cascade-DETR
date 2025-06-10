@@ -140,9 +140,6 @@ def main(args):
             losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
             losses.backward()
             optimizer.step()
-            print(detr_model.query_embed.weight[0])
-            print(detr_model.query_embed.weight[1])
-            print(detr_model.query_embed.weight.mean(dim=0))
 
             if i % args.log_interval == 0:
                 msg = f"Epoch [{epoch+1}/{args.num_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {losses.item():.4f}"
